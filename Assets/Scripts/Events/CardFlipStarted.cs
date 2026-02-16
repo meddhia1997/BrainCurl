@@ -1,5 +1,11 @@
 public readonly struct CardFlipStarted
 {
     public readonly int CardId;
-    public CardFlipStarted(int cardId) => CardId = cardId;
+    public readonly bool ToFaceUp;
+
+    public CardFlipStarted(int cardId, bool toFaceUp)
+    {
+        CardId = cardId;
+        ToFaceUp = toFaceUp;
+    }
 }

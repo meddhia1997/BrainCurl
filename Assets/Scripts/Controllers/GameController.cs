@@ -3,43 +3,77 @@ using UnityEngine;
 public sealed class GameController : MonoBehaviour
 {
     [SerializeField] private BoardView boardView;
+    [SerializeField] private float mismatchDelaySeconds = 0.8f;
 
     private IEventBus _bus;
-    private bool[] _faceUp; // temporary "no duplicate flips" gate for Sprint 2
+
+    private BoardState _board;
+    private BoardService _boardService;
+    private FlipService _flipService;
+    private MatchQueue _matchQueue;
+    private MatchService _matchService;
+
+    private FlipBackTimerRunner _timerRunner;
 
     private void Awake()
     {
         _bus = new EventBus();
+
+        // single Update runner for mismatch timers (no coroutines)
+        _timerRunner = gameObject.AddComponent<FlipBackTimerRunner>();
+        _timerRunner.Init(_bus);
+
         _bus.Subscribe<CardFlipRequested>(OnFlipRequested);
         _bus.Subscribe<CardFlipCompleted>(OnFlipCompleted);
     }
 
     private void Start()
     {
-        boardView.BuildBoard(_bus);
+        int seed = System.Environment.TickCount;
 
-        _faceUp = new bool[boardView.TotalCards];
+        _boardService = new BoardService(seed);
+        _board = _boardService.Create(boardView.Rows, boardView.Cols);
+
+        _flipService = new FlipService(_board, _bus);
+        _matchQueue = new MatchQueue(_board.TotalCards);
+        _matchService = new MatchService(_board, _bus, _flipService, _timerRunner, mismatchDelaySeconds);
+
+        boardView.BuildBoard(_bus);
     }
 
     private void OnDestroy()
     {
-        if (_bus == null) return;
-        _bus.Unsubscribe<CardFlipRequested>(OnFlipRequested);
-        _bus.Unsubscribe<CardFlipCompleted>(OnFlipCompleted);
+        if (_bus != null)
+        {
+            _bus.Unsubscribe<CardFlipRequested>(OnFlipRequested);
+            _bus.Unsubscribe<CardFlipCompleted>(OnFlipCompleted);
+        }
+
+        if (_matchService != null)
+            _matchService.Dispose();
     }
 
     private void OnFlipRequested(CardFlipRequested evt)
     {
-        // Prevent duplicate flips (Sprint 2). Sprint 3 replaces this with FlipService + CardState.
-        if (_faceUp[evt.CardId]) return;
-
-        _faceUp[evt.CardId] = true;
-        _bus.Publish(new CardFlipStarted(evt.CardId));
+        // user click = flip up attempt
+        _flipService.TryFlipUp(evt.CardId);
     }
 
     private void OnFlipCompleted(CardFlipCompleted evt)
     {
-        // Sprint 2 stops here.
-        // Sprint 3: enqueue evt.CardId to MatchQueue on completion.
+        // enqueue only completed flip-ups
+        if (!evt.IsFaceUp) return;
+
+        _matchQueue.Enqueue(evt.CardId);
+
+        // FIFO resolve
+        while (_matchQueue.Count >= 2)
+        {
+            int a, b;
+            if (!_matchQueue.TryDequeue(out a)) return;
+            if (!_matchQueue.TryDequeue(out b)) return;
+
+            _bus.Publish(new PairReady(a, b));
+        }
     }
 }

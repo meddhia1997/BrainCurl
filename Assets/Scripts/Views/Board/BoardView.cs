@@ -9,6 +9,8 @@ public sealed class BoardView : MonoBehaviour
     private RectTransform _rectTransform;
     private GridLayoutGroup _grid;
 
+    public int Rows => layoutPreset.Rows;
+    public int Cols => layoutPreset.Cols;
     public int TotalCards => layoutPreset.Rows * layoutPreset.Cols;
 
     private void Awake()
@@ -68,7 +70,6 @@ public sealed class BoardView : MonoBehaviour
             var view = go.GetComponent<CardView>();
             var anim = go.GetComponent<CardAnimator>();
 
-            // These components are required on the prefab
             view.Init(i, bus);
             anim.Init(i, bus);
         }
@@ -77,8 +78,6 @@ public sealed class BoardView : MonoBehaviour
     private void ClearBoard()
     {
         for (int i = transform.childCount - 1; i >= 0; i--)
-        {
             Destroy(transform.GetChild(i).gameObject);
-        }
     }
 }

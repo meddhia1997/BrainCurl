@@ -12,6 +12,14 @@ public sealed class GameController : MonoBehaviour
     [Header("Rules")]
     [SerializeField] private GameRulesSO rules;
 
+    [Header("Layouts")]
+    [SerializeField] private LayoutPresetSO defaultStartPreset;
+    [SerializeField] private LayoutButton[] layoutButtons;
+
+    [Header("Audio")]
+    [SerializeField] private AudioConfigSO audioConfig;
+    [SerializeField] private AudioPlayer audioPlayer;
+
     [Header("UI")]
     [SerializeField] private RestartButton restartButton;
     [SerializeField] private ScoreHUD scoreHUD;
@@ -39,6 +47,9 @@ public sealed class GameController : MonoBehaviour
     private AttemptsService _attemptsService;
     private WinConditionService _winService;
     private EndgameRestartService _endRestartService;
+    private PreviewService _previewService;
+
+    private AudioService _audioService;
 
     private FlipBackTimerRunner _timerRunner;
     private DelayedEventRunner _delayedRunner;
@@ -47,6 +58,7 @@ public sealed class GameController : MonoBehaviour
     private RestartService _restart;
 
     private bool _ended;
+    private bool _previewRunning;
 
     private void Awake()
     {
@@ -60,17 +72,41 @@ public sealed class GameController : MonoBehaviour
         _delayedRunner = gameObject.AddComponent<DelayedEventRunner>();
         _delayedRunner.Init(_bus);
 
+        if (audioPlayer == null)
+            audioPlayer = GetComponent<AudioPlayer>();
+        if (audioPlayer == null)
+            audioPlayer = gameObject.AddComponent<AudioPlayer>();
+
+        if (audioConfig != null)
+        {
+            if (audioConfig.IsValid(out var reason))
+                _audioService = new AudioService(_bus, audioPlayer, audioConfig);
+            else
+                Debug.LogWarning($"[Audio] AudioConfigSO invalid: {reason}");
+        }
+
         _bus.Subscribe<CardFlipRequested>(OnFlipRequested);
         _bus.Subscribe<CardFlipCompleted>(OnFlipCompleted);
         _bus.Subscribe<RestartRequested>(OnRestartRequested);
         _bus.Subscribe<ScoreChanged>(OnScoreChanged);
         _bus.Subscribe<AttemptsChanged>(OnAttemptsChanged);
         _bus.Subscribe<GameEnded>(OnGameEnded);
+        _bus.Subscribe<PreviewEnded>(OnPreviewEnded);
+        _bus.Subscribe<LayoutChangeRequested>(OnLayoutChangeRequested);
 
         if (restartButton != null) restartButton.Init(_bus);
         if (scoreHUD != null) scoreHUD.Init(_bus);
         if (attemptsHUD != null) attemptsHUD.Init(_bus);
         if (outcomeHUD != null) outcomeHUD.Init(_bus);
+
+        if (layoutButtons != null)
+        {
+            for (int i = 0; i < layoutButtons.Length; i++)
+            {
+                if (layoutButtons[i] != null)
+                    layoutButtons[i].Init(_bus);
+            }
+        }
     }
 
     private void Start()
@@ -81,45 +117,33 @@ public sealed class GameController : MonoBehaviour
             return;
         }
 
-        GameSaveData loaded = null;
+        // Set starting preset for the board view
+        if (defaultStartPreset != null)
+            boardView.BuildBoard(defaultStartPreset, _bus, new BoardState(defaultStartPreset.Rows, defaultStartPreset.Cols, new int[defaultStartPreset.Rows * defaultStartPreset.Cols]), cardCatalog); // temporary build to set preset
+        // We'll rebuild properly below.
 
-        if (loadOnStart && _saveLoad.TryLoad(out loaded) && IsSaveCompatible(loaded))
+        GameSaveData loaded = null;
+        bool loadedOk = loadOnStart && _saveLoad.TryLoad(out loaded) && IsSaveCompatible(loaded);
+
+        if (loadedOk)
         {
+            // Use current boardView preset (whatever the scene has); save must match it
             _board = new BoardState(loaded.Rows, loaded.Cols, loaded.PairIds);
             loaded.ApplyTo(_board);
-        }
-        else
-        {
-            int seed = Environment.TickCount;
-            _boardService = new BoardService(seed);
-            _board = _boardService.Create(boardView.Rows, boardView.Cols);
-        }
 
-        _flipService = new FlipService(_board, _bus);
-        _matchQueue = new MatchQueue(_board.TotalCards);
-        _matchService = new MatchService(_board, _bus, _flipService, _timerRunner, mismatchDelaySeconds);
-
-        _scoreService = new ScoreService(_bus, _board, matchBase, mismatchPenalty, winBonus);
-        _attemptsService = new AttemptsService(_bus, rules.maxTries);
-        _winService = new WinConditionService(_bus, _board);
-        _endRestartService = new EndgameRestartService(_bus, _saveLoad, _delayedRunner, rules);
-
-        // Load states (score/combo/tries)
-        if (loaded != null)
-        {
+            CreateServicesForCurrentBoard();
             _scoreService.LoadState(loaded.Score, loaded.Combo);
-
-            // Version upgrade safety: if old save doesn't have tries, assume maxTries
             int tries = loaded.Version >= 2 ? loaded.TriesRemaining : rules.maxTries;
             _attemptsService.LoadState(tries);
+
+            boardView.BuildBoard(boardView.CurrentPreset, _bus, _board, cardCatalog);
         }
         else
         {
-            _scoreService.LoadState(0, 0);
-            _attemptsService.LoadState(rules.maxTries);
+            // Fresh new game using defaultStartPreset if assigned, else BoardView default
+            var preset = defaultStartPreset != null ? defaultStartPreset : boardView.CurrentPreset;
+            RebuildGame(preset, startPreview: true);
         }
-
-        boardView.BuildBoard(_bus, _board, cardCatalog);
     }
 
     private void OnDestroy()
@@ -132,28 +156,12 @@ public sealed class GameController : MonoBehaviour
             _bus.Unsubscribe<ScoreChanged>(OnScoreChanged);
             _bus.Unsubscribe<AttemptsChanged>(OnAttemptsChanged);
             _bus.Unsubscribe<GameEnded>(OnGameEnded);
+            _bus.Unsubscribe<PreviewEnded>(OnPreviewEnded);
+            _bus.Unsubscribe<LayoutChangeRequested>(OnLayoutChangeRequested);
         }
 
-        _matchService?.Dispose();
-        _scoreService?.Dispose();
-        _attemptsService?.Dispose();
-        _winService?.Dispose();
-        _endRestartService?.Dispose();
-    }
-
-    private void OnApplicationPause(bool pause)
-    {
-        if (!pause) return;
-        if (!autosave) return;
-        if (_ended) return;
-        SaveSnapshot();
-    }
-
-    private void OnApplicationQuit()
-    {
-        if (!autosave) return;
-        if (_ended) return;
-        SaveSnapshot();
+        DisposeServices();
+        _audioService?.Dispose();
     }
 
     private void OnRestartRequested(RestartRequested _)
@@ -161,20 +169,115 @@ public sealed class GameController : MonoBehaviour
         _restart.Restart(clearSave: true);
     }
 
+    private void OnLayoutChangeRequested(LayoutChangeRequested evt)
+    {
+        if (evt.Preset == null) return;
+
+        // New layout = new game state
+        RebuildGame(evt.Preset, startPreview: true);
+    }
+
+    private void RebuildGame(LayoutPresetSO preset, bool startPreview)
+    {
+        _ended = false;
+        _previewRunning = false;
+
+        // Clear persistence because layout changed / new game
+        _saveLoad.Delete();
+
+        // Dispose old services (unsubscribe + stop timers)
+        DisposeServices();
+
+        // Validate: must be even
+        int total = preset.Rows * preset.Cols;
+        if ((total & 1) == 1)
+        {
+            Debug.LogError($"Invalid layout {preset.Rows}x{preset.Cols}: total cards must be even.");
+            return;
+        }
+
+        // New board
+        int seed = Environment.TickCount;
+        _boardService = new BoardService(seed);
+        _board = _boardService.Create(preset.Rows, preset.Cols);
+
+        // New services
+        CreateServicesForCurrentBoard();
+
+        // Reset score & tries
+        _scoreService.LoadState(0, 0);
+        _attemptsService.LoadState(rules.maxTries);
+
+        // Rebuild visuals
+        boardView.BuildBoard(preset, _bus, _board, cardCatalog);
+
+        // Optional preview: schedule next frame (animators ready)
+        if (startPreview && rules.enablePreview && rules.previewSeconds > 0f)
+        {
+            _previewRunning = true;
+            _previewService = new PreviewService(_bus, _board, _flipService, _delayedRunner, rules.previewSeconds);
+
+            _delayedRunner.Schedule(0f, _ =>
+            {
+                if (!_ended)
+                    _previewService.StartPreview();
+            });
+        }
+    }
+
+    private void CreateServicesForCurrentBoard()
+    {
+        _flipService = new FlipService(_board, _bus);
+        _matchQueue = new MatchQueue(_board.TotalCards);
+        _matchService = new MatchService(_board, _bus, _flipService, _timerRunner, mismatchDelaySeconds);
+
+        _scoreService = new ScoreService(_bus, _board, matchBase, mismatchPenalty, winBonus);
+        _attemptsService = new AttemptsService(_bus, rules.maxTries);
+        _winService = new WinConditionService(_bus, _board);
+        _endRestartService = new EndgameRestartService(_bus, _saveLoad, _delayedRunner, rules);
+    }
+
+    private void DisposeServices()
+    {
+        _matchService?.Dispose();
+        _scoreService?.Dispose();
+        _attemptsService?.Dispose();
+        _winService?.Dispose();
+        _endRestartService?.Dispose();
+
+        _matchService = null;
+        _scoreService = null;
+        _attemptsService = null;
+        _winService = null;
+        _endRestartService = null;
+
+        _matchQueue = null;
+        _flipService = null;
+        _boardService = null;
+        _board = null;
+    }
+
     private void OnGameEnded(GameEnded _)
     {
         _ended = true;
     }
 
+    private void OnPreviewEnded(PreviewEnded _)
+    {
+        _previewRunning = false;
+    }
+
     private void OnFlipRequested(CardFlipRequested evt)
     {
         if (_ended) return;
+        if (_previewRunning) return;
         _flipService.TryFlipUp(evt.CardId);
     }
 
     private void OnFlipCompleted(CardFlipCompleted evt)
     {
         if (_ended) return;
+        if (_previewRunning) return;
         if (!evt.IsFaceUp) return;
 
         _matchQueue.Enqueue(evt.CardId);
@@ -206,15 +309,18 @@ public sealed class GameController : MonoBehaviour
     private bool IsSaveCompatible(GameSaveData data)
     {
         if (data == null) return false;
+        if (data.PairIds == null) return false;
+
+        // Save must match current boardview preset layout
         if (data.Rows != boardView.Rows || data.Cols != boardView.Cols) return false;
-        if (data.PairIds == null || data.PairIds.Length != boardView.TotalCards) return false;
+        if (data.PairIds.Length != boardView.TotalCards) return false;
+
         return true;
     }
 
     private void SaveSnapshot()
     {
         if (_board == null || _scoreService == null || _attemptsService == null) return;
-
         var data = GameSaveData.From(_board, _scoreService.Score, _scoreService.Combo, _attemptsService.TriesRemaining);
         _saveLoad.Save(data);
     }

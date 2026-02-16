@@ -5,6 +5,9 @@ public sealed class GameController : MonoBehaviour
     [SerializeField] private BoardView boardView;
     [SerializeField] private float mismatchDelaySeconds = 0.8f;
 
+    [Header("Content")]
+    [SerializeField] private CardCatalogSO cardCatalog;
+
     private IEventBus _bus;
 
     private BoardState _board;
@@ -19,7 +22,6 @@ public sealed class GameController : MonoBehaviour
     {
         _bus = new EventBus();
 
-        // single Update runner for mismatch timers (no coroutines)
         _timerRunner = gameObject.AddComponent<FlipBackTimerRunner>();
         _timerRunner.Init(_bus);
 
@@ -38,7 +40,7 @@ public sealed class GameController : MonoBehaviour
         _matchQueue = new MatchQueue(_board.TotalCards);
         _matchService = new MatchService(_board, _bus, _flipService, _timerRunner, mismatchDelaySeconds);
 
-        boardView.BuildBoard(_bus);
+        boardView.BuildBoard(_bus, _board, cardCatalog);
     }
 
     private void OnDestroy()
@@ -55,18 +57,15 @@ public sealed class GameController : MonoBehaviour
 
     private void OnFlipRequested(CardFlipRequested evt)
     {
-        // user click = flip up attempt
         _flipService.TryFlipUp(evt.CardId);
     }
 
     private void OnFlipCompleted(CardFlipCompleted evt)
     {
-        // enqueue only completed flip-ups
         if (!evt.IsFaceUp) return;
 
         _matchQueue.Enqueue(evt.CardId);
 
-        // FIFO resolve
         while (_matchQueue.Count >= 2)
         {
             int a, b;

@@ -3,15 +3,20 @@ using UnityEngine.UI;
 
 public sealed class CardView : MonoBehaviour
 {
+    [Header("UI")]
     [SerializeField] private Button button;
+    [SerializeField] private Image faceImage;
 
     private int _cardId;
     private IEventBus _bus;
 
-    public void Init(int cardId, IEventBus bus)
+    public void Init(int cardId, Sprite faceSprite, IEventBus bus)
     {
         _cardId = cardId;
         _bus = bus;
+
+        if (faceImage != null)
+            faceImage.sprite = faceSprite;
 
         if (button != null)
         {

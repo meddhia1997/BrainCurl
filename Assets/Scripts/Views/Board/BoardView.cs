@@ -19,11 +19,11 @@ public sealed class BoardView : MonoBehaviour
         _grid = GetComponent<GridLayoutGroup>();
     }
 
-    public void BuildBoard(IEventBus bus)
+    public void BuildBoard(IEventBus bus, BoardState board, CardCatalogSO catalog)
     {
         ClearBoard();
         ConfigureGrid();
-        SpawnCards(bus);
+        SpawnCards(bus, board, catalog);
     }
 
     private void ConfigureGrid()
@@ -59,9 +59,17 @@ public sealed class BoardView : MonoBehaviour
         _grid.cellSize = new Vector2(cellWidth, cellHeight);
     }
 
-    private void SpawnCards(IEventBus bus)
+    private void SpawnCards(IEventBus bus, BoardState board, CardCatalogSO catalog)
     {
         int total = TotalCards;
+
+        // Safety: ensure catalog has enough sprites for all pairs
+        int pairsNeeded = total / 2;
+        if (catalog == null || catalog.Sprites == null || catalog.Sprites.Length < pairsNeeded)
+        {
+            Debug.LogError($"CardCatalogSO missing/too small. Need at least {pairsNeeded} sprites.");
+            return;
+        }
 
         for (int i = 0; i < total; i++)
         {
@@ -70,7 +78,10 @@ public sealed class BoardView : MonoBehaviour
             var view = go.GetComponent<CardView>();
             var anim = go.GetComponent<CardAnimator>();
 
-            view.Init(i, bus);
+            int pairId = board.GetPairId(i);
+            Sprite sprite = catalog.Sprites[pairId];
+
+            view.Init(i, sprite, bus);
             anim.Init(i, bus);
         }
     }

@@ -3,9 +3,11 @@ public sealed class BoardState
     public readonly int Rows;
     public readonly int Cols;
 
-    // fixed-size arrays for perf
-    public readonly int[] PairIds;      // len = Rows*Cols
-    public readonly CardState[] States; // len = Rows*Cols
+    // Pair identity per card (matching uses this)
+    public readonly int[] PairIds;
+
+    // Runtime state per card
+    public readonly CardState[] States;
 
     public int TotalCards => PairIds.Length;
 
@@ -19,4 +21,6 @@ public sealed class BoardState
         for (int i = 0; i < States.Length; i++)
             States[i] = CardState.FaceDown;
     }
+
+    public int GetPairId(int cardId) => PairIds[cardId];
 }

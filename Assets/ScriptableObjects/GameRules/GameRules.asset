@@ -9,10 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 23887bf2ec902894fb436e89aa885f54, type: 3}
-  m_Name: Layout_4x4
+  m_Script: {fileID: 11500000, guid: dca88e6daef8fbd499ce105e42e17e4b, type: 3}
+  m_Name: GameRules
   m_EditorClassIdentifier: 
-  Rows: 3
-  Cols: 2
-  Spacing: {x: 10, y: 10}
-  Padding: {x: 20, y: 20}
+  maxTries: 10
+  winRestartDelaySeconds: 2
+  defeatRestartDelaySeconds: 2

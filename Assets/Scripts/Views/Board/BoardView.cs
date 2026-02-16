@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
 public sealed class BoardView : MonoBehaviour
@@ -63,7 +63,6 @@ public sealed class BoardView : MonoBehaviour
     {
         int total = TotalCards;
 
-        // Safety: ensure catalog has enough sprites for all pairs
         int pairsNeeded = total / 2;
         if (catalog == null || catalog.Sprites == null || catalog.Sprites.Length < pairsNeeded)
         {
@@ -81,8 +80,10 @@ public sealed class BoardView : MonoBehaviour
             int pairId = board.GetPairId(i);
             Sprite sprite = catalog.Sprites[pairId];
 
-            view.Init(i, sprite, bus);
-            anim.Init(i, bus);
+            bool isMatched = board.States[i] == CardState.Matched;
+
+            view.Init(i, sprite, bus, startInteractable: !isMatched);
+            anim.Init(i, bus, startFaceUp: isMatched);
         }
     }
 

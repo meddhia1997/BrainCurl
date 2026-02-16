@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public sealed class CardAnimator : MonoBehaviour
 {
@@ -12,14 +12,13 @@ public sealed class CardAnimator : MonoBehaviour
 
     private static readonly int FlipTrigger = Animator.StringToHash("Flip");
 
-    public void Init(int cardId, IEventBus bus)
+    public void Init(int cardId, IEventBus bus, bool startFaceUp)
     {
         _cardId = cardId;
         _bus = bus;
 
-        // default visuals
-        if (backGO != null) backGO.SetActive(true);
-        if (faceGO != null) faceGO.SetActive(false);
+        _targetFaceUp = startFaceUp;
+        ApplyImmediateVisual(startFaceUp);
 
         _bus.Subscribe<CardFlipStarted>(OnFlipStarted);
     }
@@ -39,10 +38,9 @@ public sealed class CardAnimator : MonoBehaviour
         animator.SetTrigger(FlipTrigger);
     }
 
-    // Animation Event at ~50%
-    public void OnFlipSwapSide()
+    private void ApplyImmediateVisual(bool faceUp)
     {
-        if (_targetFaceUp)
+        if (faceUp)
         {
             if (backGO != null) backGO.SetActive(false);
             if (faceGO != null) faceGO.SetActive(true);
@@ -52,6 +50,12 @@ public sealed class CardAnimator : MonoBehaviour
             if (faceGO != null) faceGO.SetActive(false);
             if (backGO != null) backGO.SetActive(true);
         }
+    }
+
+    // Animation Event at ~50%
+    public void OnFlipSwapSide()
+    {
+        ApplyImmediateVisual(_targetFaceUp);
     }
 
     // Animation Event at the end

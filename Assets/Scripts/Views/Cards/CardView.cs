@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
 public sealed class CardView : MonoBehaviour
@@ -10,7 +10,7 @@ public sealed class CardView : MonoBehaviour
     private int _cardId;
     private IEventBus _bus;
 
-    public void Init(int cardId, Sprite faceSprite, IEventBus bus)
+    public void Init(int cardId, Sprite faceSprite, IEventBus bus, bool startInteractable)
     {
         _cardId = cardId;
         _bus = bus;
@@ -21,7 +21,7 @@ public sealed class CardView : MonoBehaviour
         if (button != null)
         {
             button.onClick.AddListener(OnClicked);
-            button.interactable = true;
+            button.interactable = startInteractable;
         }
 
         _bus.Subscribe<CardInteractableChanged>(OnInteractableChanged);

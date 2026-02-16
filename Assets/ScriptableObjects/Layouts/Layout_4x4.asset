@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 23887bf2ec902894fb436e89aa885f54, type: 3}
   m_Name: Layout_4x4
   m_EditorClassIdentifier: 
-  Rows: 4
-  Cols: 4
+  Rows: 2
+  Cols: 2
   Spacing: {x: 10, y: 10}
   Padding: {x: 20, y: 20}

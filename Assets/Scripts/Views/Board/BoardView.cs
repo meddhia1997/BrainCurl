@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class BoardView : MonoBehaviour
+public sealed class BoardView : MonoBehaviour
 {
     [SerializeField] private LayoutPresetSO layoutPreset;
     [SerializeField] private GameObject cardPrefab;
@@ -9,18 +9,19 @@ public class BoardView : MonoBehaviour
     private RectTransform _rectTransform;
     private GridLayoutGroup _grid;
 
+    public int TotalCards => layoutPreset.Rows * layoutPreset.Cols;
+
     private void Awake()
     {
         _rectTransform = GetComponent<RectTransform>();
         _grid = GetComponent<GridLayoutGroup>();
     }
 
-    public void BuildBoard()
+    public void BuildBoard(IEventBus bus)
     {
         ClearBoard();
-
         ConfigureGrid();
-        SpawnCards();
+        SpawnCards(bus);
     }
 
     private void ConfigureGrid()
@@ -44,8 +45,8 @@ public class BoardView : MonoBehaviour
         float totalWidth = _rectTransform.rect.width;
         float totalHeight = _rectTransform.rect.height;
 
-        float horizontalPadding = layoutPreset.Padding.x * 2;
-        float verticalPadding = layoutPreset.Padding.y * 2;
+        float horizontalPadding = layoutPreset.Padding.x * 2f;
+        float verticalPadding = layoutPreset.Padding.y * 2f;
 
         float horizontalSpacing = layoutPreset.Spacing.x * (layoutPreset.Cols - 1);
         float verticalSpacing = layoutPreset.Spacing.y * (layoutPreset.Rows - 1);
@@ -56,13 +57,20 @@ public class BoardView : MonoBehaviour
         _grid.cellSize = new Vector2(cellWidth, cellHeight);
     }
 
-    private void SpawnCards()
+    private void SpawnCards(IEventBus bus)
     {
-        int total = layoutPreset.Rows * layoutPreset.Cols;
+        int total = TotalCards;
 
         for (int i = 0; i < total; i++)
         {
-            Instantiate(cardPrefab, transform);
+            var go = Instantiate(cardPrefab, transform);
+
+            var view = go.GetComponent<CardView>();
+            var anim = go.GetComponent<CardAnimator>();
+
+            // These components are required on the prefab
+            view.Init(i, bus);
+            anim.Init(i, bus);
         }
     }
 
